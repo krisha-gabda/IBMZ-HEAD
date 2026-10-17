@@ -1,0 +1,15 @@
+# Windows download metadata
+*Zone.Identifier
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
+# Secrets and editor/OS files
+.env
+*.key
+.DS_Store
+Thumbs.db
+.vscode/
