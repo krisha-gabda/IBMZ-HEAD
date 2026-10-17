@@ -1,0 +1,6 @@
+id,age,region,attendance,mental_health,risk_score
+1001,17,Manchester,Poor,Poor,0.92
+1002,18,Leeds,Average,Good,0.74
+1003,16,Liverpool,Excellent,Good,0.21
+1004,17,Manchester,Average,Poor,0.81
+1005,16,Sheffield,Poor,Average,0.89
