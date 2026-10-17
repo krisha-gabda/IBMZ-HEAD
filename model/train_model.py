@@ -2,7 +2,8 @@
 train_model.py - train the NEET early-warning model.
 
 Run from the repo root:
-    python model/train_model.py
+    python model/train_model.py                 # read learners from Db2 (default)
+    python model/train_model.py --source csv    # read data/neet_data.csv instead
 
 Outputs:
     model/model.pkl      model bundle (pipeline + thresholds + baselines)
@@ -18,6 +19,7 @@ Design notes
 * Logistic regression is the deployed model because its coefficients are directly
   explainable; a gradient-boosting model is trained only as a comparison.
 """
+import argparse
 import json
 from pathlib import Path
 
@@ -36,6 +38,11 @@ from sklearn.model_selection import (
 )
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+try:  # works both as `python model/train_model.py` and as a package import
+    from model import db_utils
+except ImportError:
+    import db_utils
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = ROOT / "data" / "neet_data.csv"
@@ -89,7 +96,11 @@ def recall_at_top(y_true, scores, top_frac):
 
 
 def main():
-    df = pd.read_csv(DATA_PATH)
+    ap = argparse.ArgumentParser(description="Train the NEET early-warning model")
+    ap.add_argument("--source", choices=["db", "csv"], default="db")
+    args = ap.parse_args()
+
+    df = db_utils.read_learners() if args.source == "db" else pd.read_csv(DATA_PATH)
     X, y = df[FEATURES], df[TARGET]
     print(f"Loaded {len(df)} rows | NEET rate = {y.mean():.1%}")
 

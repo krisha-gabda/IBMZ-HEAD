@@ -2,7 +2,8 @@
 inference.py - score learners with the trained NEET early-warning model.
 
 Command line (run from the repo root; this is what ibm_z/run_inference_on_z.sh calls):
-    python model/inference.py --input data/neet_data.csv --output risk_scores.csv
+    python model/inference.py                       # Db2 table -> score -> write back to Db2 (default)
+    python model/inference.py --source csv          # CSV -> score -> risk_scores.csv (local fallback)
 
 From Python (e.g. the dashboard):
     from model.inference import score
@@ -18,6 +19,11 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+
+try:  # works both as a script and as a package import
+    from model import db_utils
+except ImportError:
+    import db_utils
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = ROOT / "model" / "model.pkl"
@@ -125,15 +131,28 @@ def score(df, bundle=None):
 
 def main():
     ap = argparse.ArgumentParser(description="Score learners for NEET risk")
-    ap.add_argument("--input", default=str(ROOT / "data" / "neet_data.csv"))
-    ap.add_argument("--output", default=str(ROOT / "risk_scores.csv"))
+    ap.add_argument("--source", choices=["db", "csv"], default="db",
+                    help="db = read from / write back to the database (default); csv = local files")
+    ap.add_argument("--input", default=str(ROOT / "data" / "neet_data.csv"), help="csv source only")
+    ap.add_argument("--output", default=str(ROOT / "risk_scores.csv"), help="csv source only")
+    ap.add_argument("--no-write-csv", action="store_true", help="db source: skip the CSV copy")
     ap.add_argument("--model", default=str(MODEL_PATH))
     args = ap.parse_args()
 
-    df = pd.read_csv(args.input)
-    result = score(df, load_bundle(args.model))
-    result.to_csv(args.output, index=False)
-    print(f"Scored {len(result)} learners -> {args.output}")
+    bundle = load_bundle(args.model)
+    if args.source == "db":
+        df = db_utils.read_learners()
+        print(f"Read {len(df)} learners from {db_utils._qualified(db_utils.INPUT_TABLE)}")
+        result = score(df, bundle)
+        n = db_utils.write_scores(result)
+        print(f"Wrote {n} rows to {db_utils._qualified(db_utils.OUTPUT_TABLE)}")
+        if not args.no_write_csv:
+            result.to_csv(args.output, index=False)
+    else:
+        df = pd.read_csv(args.input)
+        result = score(df, bundle)
+        result.to_csv(args.output, index=False)
+        print(f"Scored {len(result)} learners -> {args.output}")
     print(result["risk_level"].value_counts().to_string())
 
 
