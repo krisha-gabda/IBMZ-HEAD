@@ -60,6 +60,34 @@ python generate_neet_dataset.py   # writes neet_dataset.csv and data_dictionary.
 python validate_and_export.py     # runs checks, writes Db2 CSV, report and guide
 ```
 
+### Testing the saved model
+
+Run the inference smoke tests from the repository root. They load `model/model.pkl`
+and score a sample from `data/neet_dataset.csv`; no database connection is needed.
+
+```bash
+python -m unittest discover -s tests
+```
+
+### Running the Streamlit dashboard
+
+Install the dashboard and model dependencies, then launch the app from the
+repository root:
+
+```bash
+python -m pip install -r IBM-NEET-DASHBOARD/requirements.txt
+python -m streamlit run IBM-NEET-DASHBOARD/app.py
+```
+
+The dashboard defaults to the synthetic `data/neet_dataset.csv` and calculates
+scores with `model/model.pkl`. To read learners from the configured database,
+select **Configured database** in the sidebar. Set `DB_BACKEND=sqlite` and
+`DB_SQLITE_PATH` for a local SQLite database, or configure the `DB2_*`
+environment variables described in `model/db_utils.py` for Db2. The selected
+database must contain the configured input table and all model input columns.
+Saving predictions is an explicit action and replaces the configured output
+score table.
+
 ### Limitations
 
 - The dataset is synthetic. A model trained on it recovers the relationships built into the generator and the annex proportions. It does not discover real-world causes.

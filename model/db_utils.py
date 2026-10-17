@@ -95,8 +95,9 @@ def read_learners(table=None):
     # Db2 DECIMAL columns come back as Decimal objects - make numerics real numbers
     for c in df.columns:
         if df[c].dtype == object:
-            converted = pd.to_numeric(df[c], errors="ignore")
-            df[c] = converted
+            converted = pd.to_numeric(df[c], errors="coerce")
+            if converted.notna().sum() == df[c].notna().sum():
+                df[c] = converted
     return df
 
 
@@ -117,14 +118,12 @@ def write_scores(result, table=None):
     conn = get_connection()
     try:
         cur = conn.cursor()
-        try:  # create if missing; Db2 has no portable IF NOT EXISTS, so ignore "already exists"
+        try:
+            cur.execute(f"SELECT 1 FROM {table} WHERE 1=0")
+        except Exception:
+            conn.rollback()
             cur.execute(f"CREATE TABLE {table} ({OUTPUT_DDL_COLUMNS})")
             conn.commit()
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
         cur.execute(f"DELETE FROM {table}")
         placeholders = ",".join("?" * len(OUTPUT_COLUMNS))
         cur.executemany(

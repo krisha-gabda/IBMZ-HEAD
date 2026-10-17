@@ -1,319 +1,215 @@
-import streamlit as st
+from pathlib import Path
+import sys
+
 import pandas as pd
+import streamlit as st
 
-factor_data = pd.DataFrame({
-    "Factor": [
-        "Attendance",
-        "Mental Health",
-        "Income",
-        "Benefits",
-        "Qualifications"
-    ],
-    "Importance": [
-        42,
-        25,
-        15,
-        12,
-        6
-    ]
-})
+st.set_page_config(page_title="Get Your HEAD In The Game", layout="wide")
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from model import db_utils
+from model.inference import load_bundle, score
+
+DATA_PATH = ROOT / "data" / "neet_dataset.csv"
+FACTOR_COLUMNS = ["top_factor_1", "top_factor_2", "top_factor_3"]
 
 
+@st.cache_resource
+def get_model():
+    return load_bundle()
 
-st.set_page_config(
-    page_title="Get Your HEAD In The Game",
-    layout="wide"
+
+def get_learners(data_source):
+    if data_source == "Configured database":
+        return db_utils.read_learners()
+    return pd.read_csv(DATA_PATH)
+
+
+def score_learners(learners):
+    if learners.empty:
+        raise ValueError("The selected data source contains no learners.")
+    if "learner_id" not in learners.columns:
+        raise ValueError("The selected data source must include a learner_id column.")
+
+    predictions = score(learners, get_model())
+    return learners.merge(
+        predictions,
+        on="learner_id",
+        how="left",
+        validate="one_to_one",
+    )
+
+
+st.sidebar.header("Data")
+data_source = st.sidebar.radio(
+    "Learner data source",
+    ["Local synthetic dataset", "Configured database"],
+    help=(
+        "The local option uses data/neet_dataset.csv. The database option reads "
+        "the configured NEET_DATA table using the DB_BACKEND environment setting."
+    ),
 )
 
-df = pd.read_csv(
-    "data/sample_predictions.csv"
-)
+try:
+    learners = get_learners(data_source)
+    df = score_learners(learners)
+except Exception as error:
+    st.error(f"Unable to load and score learners from {data_source.lower()}.")
+    st.exception(error)
+    st.stop()
 
 st.sidebar.header("Filters")
-
-selected_region = st.sidebar.selectbox(
-    "Region",
-    ["All"] + list(df["region"].unique())
+selected_risk = st.sidebar.selectbox(
+    "Risk level",
+    ["All", "High", "Medium", "Low"],
+)
+filtered_df = (
+    df if selected_risk == "All" else df[df["risk_level"] == selected_risk]
 )
 
-filtered_df = df
-
-region_risk = (
-    filtered_df.groupby("region")["risk_score"]
-    .mean()
-    .reset_index()
-)
-
-top_region = region_risk.sort_values(
-    by="risk_score",
-    ascending=False
-).iloc[0]
-
-def risk_level(score):
-
-    if score >= 0.8:
-        return "🔴 High"
-
-    elif score >= 0.5:
-        return "🟠 Medium"
-
-    else:
-        return "🟢 Low"
-
-df["Risk Level"] = (
-    df["risk_score"]
-    .apply(risk_level)
-)
-
-if selected_region != "All":
-    filtered_df = df[
-        df["region"] == selected_region
-    ]
-
-regions_requiring_support = len(
-    region_risk[
-        region_risk["risk_score"] >= 0.6
-    ])
+if filtered_df.empty:
+    st.info("No learners match the selected risk-level filter.")
+    st.stop()
 
 st.title("🤜 Get Your HEAD In The Game 🤛")
-
-st.subheader(
-    "By HEAD IBM Z for the IBM Z Datathon 2026"
+st.subheader("By HEAD IBM Z for the IBM Z Datathon 2026")
+st.markdown(
+    "An early-warning dashboard that uses the trained NEET risk model to help "
+    "identify where timely, human-led support may be useful."
 )
 
-st.markdown("""
-Early warning system for identifying young people at risk of becoming NEET by identifying where support is needed earliest, so interventions can be offered before negative outcomes occur.
-""")
+if data_source == "Configured database":
+    st.sidebar.caption(
+        "Predictions are calculated from the current learner table. Saving them "
+        "replaces the configured risk-score table."
+    )
+    confirm_save = st.sidebar.checkbox(
+        "I understand this replaces all existing risk scores"
+    )
+    if st.sidebar.button("Save scores to database", disabled=not confirm_save):
+        try:
+            saved_count = db_utils.write_scores(df)
+        except Exception as error:
+            st.sidebar.error("Unable to save scores to the configured database.")
+            st.sidebar.exception(error)
+        else:
+            st.sidebar.success(f"Saved {saved_count} learner scores.")
 
-overview_tab, ranking_tab, profile_tab, risk_factors_tab, intervention_tab, ethics_tab = st.tabs([
-    "Overview",
-    "Risk Ranking",
-    "Individual Profile",
-    "Top Risk Factors",
-    "Interventions",
-    "Ethics and Governance"
-])
+overview_tab, ranking_tab, profile_tab, risk_factors_tab, intervention_tab, ethics_tab = st.tabs(
+    [
+        "Overview",
+        "Risk Ranking",
+        "Individual Profile",
+        "Top Risk Factors",
+        "Interventions",
+        "Ethics and Governance",
+    ]
+)
 
 with overview_tab:
-
     col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric(
-        "Total Population",
-        len(filtered_df)
-    )
-
-    col2.metric(
-        "High Risk Cases",
-        len(filtered_df[filtered_df["risk_score"] > 0.8])
-    )
-
-    col3.metric(
-        "Average Risk",
-        f"{round(filtered_df['risk_score'].mean()*100)}%"
-    )
-
+    col1.metric("Learners", len(filtered_df))
+    col2.metric("High Risk", int((filtered_df["risk_level"] == "High").sum()))
+    col3.metric("Average Risk", f"{filtered_df['risk_score'].mean():.0%}")
     col4.metric(
-        "Regions Requiring Support",
-        regions_requiring_support
+        "Medium / High Risk",
+        int(filtered_df["risk_level"].isin(["Medium", "High"]).sum()),
     )
 
+    highest_risk = filtered_df.loc[filtered_df["risk_score"].idxmax()]
     st.info(
-        f"""
-        Community-level analysis suggests that
-        **{top_region['region']}** may benefit from
-        additional youth engagement and support resources.
-        """
+        f"Learner {highest_risk['learner_id']} currently has the highest predicted "
+        f"risk ({highest_risk['risk_score']:.0%}). Predictions are advisory and "
+        "must be reviewed by a person."
     )
+    if data_source == "Local synthetic dataset":
+        st.caption(
+            "These predictions use synthetic demonstration data; they are not "
+            "evidence about real learners."
+        )
 
 with ranking_tab:
     st.dataframe(
-    filtered_df.sort_values(
-        by="risk_score",
-        ascending=False
+        filtered_df.sort_values("risk_score", ascending=False),
+        width="stretch",
+        hide_index=True,
     )
-)
 
 with profile_tab:
-    selected_id = st.selectbox(
-    "Select Individual",
-    filtered_df["id"]
+    selected_id = st.selectbox("Select learner", filtered_df["learner_id"].tolist())
+    person = filtered_df.loc[filtered_df["learner_id"] == selected_id].iloc[0]
+    profile_cols = st.columns(3)
+    profile_cols[0].metric("Predicted risk", f"{person['risk_score']:.0%}")
+    profile_cols[1].metric("Risk level", person["risk_level"])
+    profile_cols[2].metric("Age", int(person["age"]))
+    st.subheader("Model explanation")
+    for column in FACTOR_COLUMNS:
+        if person[column]:
+            st.write(f"- {person[column]}")
+    st.caption(
+        "Explanations describe model associations, not causes or a full account "
+        "of a learner's circumstances."
     )
-
-    person = filtered_df[
-    filtered_df["id"] == selected_id
-    ]
-
-    st.write(person)
-
 
 with risk_factors_tab:
-    st.subheader(
-        "Top Risk Factors Driving Predicted NEET Outcomes"
+    st.subheader("Factors contributing to learner risk scores")
+    factors = (
+        filtered_df[FACTOR_COLUMNS]
+        .melt(value_name="Factor")["Factor"]
+        .replace("", pd.NA)
+        .dropna()
+        .value_counts()
     )
-
-    st.write(
-        """
-        🔴 School attendance below 70%
-
-        🟠 Poor mental health indicators
-
-        🟠 Low household income
-
-        🟠 Long-term benefit dependency
-
-        🟢 Qualification attainment level
-        """
+    if factors.empty:
+        st.info("The selected learners have no positive risk-contributing factors.")
+    else:
+        st.bar_chart(factors.rename("Learners"))
+    st.caption(
+        "Factors are derived from each prediction's positive model contributions. "
+        "They indicate association, not causation."
     )
-
-    st.bar_chart(
-    factor_data.set_index("Factor") 
-)
-
-    st.success(
-    """
-    The model highlights factors associated
-    with increased support needs but does not
-    establish causation.
-    """
-    )  
 
 with intervention_tab:
-    st.subheader(
-    "AI-Assisted Recommended Interventions"
-    )
-
-    st.success(
-        """
-        • Attendance mentoring
-
-        • Mental health referral
-
-        • Skills development programme
-
-        • Employment readiness support
-        """
-    )
-
+    st.subheader("Suggested support")
     selected_id = st.selectbox(
-        "Select Individual for Support Planning",
-        filtered_df["id"],
-        key="intervention_select"
+        "Select learner for support planning",
+        filtered_df["learner_id"].tolist(),
+        key="intervention_select",
     )
-
-    person = filtered_df[
-        filtered_df["id"] == selected_id
-    ].iloc[0]
-
-    recommendations = []
-
-    if person["attendance"] == "Poor":
-        recommendations.append(
-            "📚 Assign attendance mentor and school engagement support."
-        )
-
-    if person["mental_health"] == "Poor":
-        recommendations.append(
-            "🧠 Refer to mental wellbeing services and counselling support."
-        )
-
-    if person["risk_score"] > 0.8:
-        recommendations.append(
-            "🚨 Prioritise case review by youth support team."
-        )
-
-    st.subheader("Support Recommendations")
-
-    for recommendation in recommendations:
-        st.success(recommendation)
-
-    st.subheader("Why these recommendations?")
-
+    person = filtered_df.loc[filtered_df["learner_id"] == selected_id].iloc[0]
+    st.write(f"**Risk level:** {person['risk_level']}")
+    st.write(f"**Model suggestion:** {person['suggested_intervention']}")
     st.info(
-        """
-        Recommendations are generated using explainable
-        risk indicators and are intended to support human
-        decision-makers, not replace them.
-        """
+        "Suggestions are generated from the model's leading risk factor. A "
+        "qualified support team should review the context and decide whether "
+        "any action is appropriate."
     )
 
 with ethics_tab:
     st.header("Responsible AI & Governance")
-
-    st.subheader("Human-Centred Decision Making")
-
+    st.subheader("Human-centred decision making")
     st.success(
-        """
-        Risk scores are advisory indicators only.
-        All decisions remain under human review. This is not
-        about removing human involvement but rather about providing 
-        humans with the most informative data in order to utilise 
-        a whole-of-government approach to help young people live full 
-        and economically active lives.
-        """
+        "Risk scores are advisory indicators only. All decisions must remain "
+        "under human review and consider the learner's individual circumstances."
     )
-
-    st.subheader("Explainable AI")
-
+    st.subheader("Explainability and fairness")
     st.info(
-        """
-        Every prediction is accompanied by the
-        contributing factors that influenced the
-        risk assessment.
-        """
+        "The model provides contributing factors, but explanations do not establish "
+        "causation. Outputs should be routinely audited for demographic and "
+        "geographical bias."
     )
-
-    st.subheader("Fairness Monitoring")
-
-    st.info(
-        """
-        Model outputs should be routinely audited
-        for demographic and geographical bias.
-        """
-    )
-
-    st.subheader("Privacy & Data Protection")
-
-    st.info(
-        """
-        Personally identifiable information is
-        minimised and protected throughout the
-        analytical process.
-        """
-    )
-
-    st.subheader("Purpose Limitation")
-
+    st.subheader("Privacy and purpose limitation")
     st.warning(
+        "Use data only for appropriate early-support planning. Protect personal "
+        "information, restrict access, and never use risk scores to penalise, "
+        "discriminate against, or restrict opportunities."
+    )
+    st.markdown(
         """
-        This platform is designed exclusively to
-        support early intervention and improved
-        outcomes for young people.
-
-        It must not be used to penalise,
-        discriminate against, or restrict
-        opportunities.
+        The objective is not prediction for its own sake. It is to support
+        informed, timely, and proportionate help.
         """
     )
-
-    st.subheader("AI for Good Impact")
-
-    st.markdown("""
-    ### Our Commitment
-
-    This platform exists to:
-
-    - Identify support needs earlier
-    - Improve educational outcomes
-    - Reduce social exclusion
-    - Help government allocate resources effectively
-    - Strengthen collaboration between public, private and third-sector organisations
-
-    The objective is not prediction.
-
-    The objective is prevention.
-    """
-    )
-
-
-
