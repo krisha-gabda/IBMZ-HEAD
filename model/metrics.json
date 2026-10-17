@@ -1,0 +1,91 @@
+{
+  "n_rows": 1000,
+  "neet_rate": 0.097,
+  "features_used": [
+    "age",
+    "attendance_pct",
+    "household_income",
+    "send",
+    "mental_health_condition",
+    "qualification_level"
+  ],
+  "cv_auc_logreg": [
+    0.8161555846337759,
+    0.06833268018260735
+  ],
+  "cv_auc_gbm": [
+    0.8027209298568705,
+    0.03660361222678529
+  ],
+  "holdout": {
+    "auc": 0.8508480825958702,
+    "recall_top_10pct": 0.5,
+    "recall_top_30pct": 0.8333333333333334
+  },
+  "fairness_audit": [
+    {
+      "group": "bangladeshi",
+      "n": 4,
+      "actual_neet_rate": 0.25,
+      "mean_risk_score": 0.354,
+      "high_risk_flag_rate": 0.0
+    },
+    {
+      "group": "black_african_caribbean",
+      "n": 33,
+      "actual_neet_rate": 0.212,
+      "mean_risk_score": 0.391,
+      "high_risk_flag_rate": 0.212
+    },
+    {
+      "group": "chinese",
+      "n": 15,
+      "actual_neet_rate": 0.133,
+      "mean_risk_score": 0.346,
+      "high_risk_flag_rate": 0.067
+    },
+    {
+      "group": "indian",
+      "n": 42,
+      "actual_neet_rate": 0.071,
+      "mean_risk_score": 0.333,
+      "high_risk_flag_rate": 0.071
+    },
+    {
+      "group": "mixed_multiple",
+      "n": 26,
+      "actual_neet_rate": 0.154,
+      "mean_risk_score": 0.449,
+      "high_risk_flag_rate": 0.192
+    },
+    {
+      "group": "other_asian",
+      "n": 19,
+      "actual_neet_rate": 0.053,
+      "mean_risk_score": 0.283,
+      "high_risk_flag_rate": 0.105
+    },
+    {
+      "group": "other_ethnic_group",
+      "n": 18,
+      "actual_neet_rate": 0.222,
+      "mean_risk_score": 0.345,
+      "high_risk_flag_rate": 0.111
+    },
+    {
+      "group": "pakistani",
+      "n": 29,
+      "actual_neet_rate": 0.103,
+      "mean_risk_score": 0.253,
+      "high_risk_flag_rate": 0.034
+    },
+    {
+      "group": "white",
+      "n": 814,
+      "actual_neet_rate": 0.088,
+      "mean_risk_score": 0.352,
+      "high_risk_flag_rate": 0.097
+    }
+  ],
+  "note": "Synthetic data: metrics show the model learns the relationships built into the dataset, not real-world predictive performance."
+}
